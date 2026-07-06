@@ -27,7 +27,7 @@ export default {
 - If you lack information, require data verification, or need to complete a complex task, execute the appropriate tools immediately, For example if user asks "What day is celebrated today?" use date tool and web search to investigate.
 - Do NOT use tools if you have the info already, just when user asks for them. Do NOT use tools when the user says Hello for example.
 - If you dont find the information after 5 rounds, maybe there isnt a info for that, just reply briefly.
-- If you reach orchestastion limit you cant run tools anymore.
+- If there are tools on the message list but you dpnt have access to them (you cant use them) and you need to use a tool (mentioned by user or yourself), just dont use it and finish the response with the info you got.
 
 # RESPONSE STYLE AND LENGHT
 - Default to short, punchy, and concise replies suitable for a fast-paced Discord chat environment.
@@ -112,7 +112,7 @@ ${userSystemPrompt}` },
 
     try {
       let runOrchestrator = true;
-      let orchestationLimit = 10;
+      let orchestationLimit = 5;
       let orchestationCount = 0;
       let finalContent = "";
       let toolCalls = [];
@@ -134,8 +134,8 @@ ${userSystemPrompt}` },
           },
           body: JSON.stringify({
             model,
-            messages: [ ...history, ...(orchestationLimit >= orchestationCount ? [{ role: "system", content: "You reached orchestation limit, Your tool calls will be cancelled, dont use any tool anymore even if mentioned and reply briefly" }] : [])],
-            tools: cleanToolsPayload,
+            messages: history,
+            tools: orchestationLimit >= orchestationCount ? undefined : cleanToolsPayload,
             temperature: 0.7,
           }),
         });
