@@ -170,7 +170,7 @@ ${userSystemPrompt}` },
       }
 
       await interaction.editReply({ 
-        components: [new TextDisplay({ content: `${finalContent}\n${toolCalls ? " • " + toolCalls.map(c => tools.find(t => t.function.name == c.function.name)?.function.icon || getEmoji("wrong").join(" ") + " • ": ""}using ${model}` })], 
+        components: [new TextDisplay({ content: `${finalContent}\n-# **${toolCalls ? toolCalls.map(c => tools.find(t => t.function.name == c.function.name)?.function.icon || getEmoji("wrong")).join(" ") + " • " : ""}using ${model}**` })], 
         flags: MessageFlags.IsComponentsV2 
       });
 
