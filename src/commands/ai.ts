@@ -27,6 +27,7 @@ export default {
 - If you lack information, require data verification, or need to complete a complex task, execute the appropriate tools immediately, For example if user asks "What day is celebrated today?" use date tool and web search to investigate.
 - Do NOT use tools if you have the info already, just when user asks for them. Do NOT use tools when the user says Hello for example.
 - If you dont find the information after 5 rounds, maybe there isnt a info for that, just reply briefly.
+- If you reach orchestastion limit you cant run tools anymore.
 
 # RESPONSE STYLE AND LENGHT
 - Default to short, punchy, and concise replies suitable for a fast-paced Discord chat environment.
@@ -111,11 +112,15 @@ ${userSystemPrompt}` },
 
     try {
       let runOrchestrator = true;
+      let orchestationLimit = 10;
+      let orchestationCount = 0;
       let finalContent = "";
       let toolCalls = [];
       const model = "openai/gpt-oss-120b";
 
       while (runOrchestrator) {
+        orchestationCount++;
+        
         await interaction.editReply({ 
           components: [new TextDisplay({ content: `${getEmoji("settings")} **Fetching** • using ${model}` })], 
           flags: MessageFlags.IsComponentsV2 
@@ -129,7 +134,7 @@ ${userSystemPrompt}` },
           },
           body: JSON.stringify({
             model,
-            messages: history,
+            messages: [ ...history, ...(orchestationLimit >= orchestationCount ? [{ role: "system", content: "You reached orchestation limit, Your tool calls will be cancelled, dont use any tool anymore even if mentioned and reply briefly" }] : [])],
             tools: cleanToolsPayload,
             temperature: 0.7,
           }),
@@ -141,7 +146,7 @@ ${userSystemPrompt}` },
         
         history.push(message);
 
-        if (message.tool_calls?.length > 0) {
+        if (message.tool_calls?.length > 0 && orchestationLimit >= orchestationCount) {
           toolCalls = [...toolCalls, message.tool_calls];
           for (const toolCall of message.tool_calls) {
             const targetTool = tools.find(t => t.function.name === toolCall.function.name);
