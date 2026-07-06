@@ -1,49 +1,68 @@
-import { Client, MessageFlags, MessageContextMenuCommandInteraction, ApplicationCommandType } from "discord.js";
+import { Client, MessageFlags, MessageContextMenuCommandInteraction, ChatInputCommandInteraction, ApplicationCommandType } from "discord.js";
 import { TextDisplay } from "../utils/component.ts";
 import { getEmoji } from "../utils/emojis.ts";
 import { Settings } from "../utils/settings.ts";
+import { safeText, parseToolArgs } from "../utils/utils.ts";
+import type { ToolArgs, ToolDef } from "../types/types.ts";
+
+const model = "openai/gpt-oss-120b";
+const maxToolRounds = 5;
 
 export default {
   category: "utility",
   data: {
-    type: [ ApplicationCommandType.ChatInput, ApplicationCommandType.Message ],
+    type: [ApplicationCommandType.ChatInput, ApplicationCommandType.Message],
     options: [{ type: 3, name: "prompt", description: "Prompt", required: true }],
     name: "ai",
     description: "Ask a question to the AI",
     context: {
       name: "Ask AI",
-    }
+    },
   },
   async execute(interaction: any, client: Client) {
     await interaction.deferReply();
-    const isContextInteraction = interaction instanceof MessageContextMenuCommandInteraction;
-    const prompt = isContextInteraction ? interaction.options.getMessage("message").content.trim() : interaction.options?.getString("prompt").trim();
+
+    const isMessageContext = interaction instanceof MessageContextMenuCommandInteraction;
+
+    const prompt =
+      isMessageContext
+        ? interaction.targetMessage?.content?.trim() ?? ""
+        : interaction.options.getString("prompt", true).trim();
+
+    if (!prompt) {
+      await interaction.editReply({
+        components: [new TextDisplay({ content: `${getEmoji("wrong")} No prompt provided.` })],
+        flags: MessageFlags.IsComponentsV2,
+      });
+      return;
+    }
+
     const userSystemPrompt = await Settings.get(client.db, interaction.user.id, "ai_system_prompt");
-    const history: any[] = [
-      { role: "system", content: `You are Argo, a efficient Discord bot. Always maintain your persona as an AI assistant integrated into a chat server.
 
-# TOOL USAGE DEFINITION
-- You are fully authorized to make multiple, consecutive tool requests whenever necessary, Just when necessary.
-- If you lack information, require data verification, or need to complete a complex task, execute the appropriate tools immediately, For example if user asks "What day is celebrated today?" use date tool and web search to investigate.
-- Do NOT use tools if you have the info already, just when user asks for them. Do NOT use tools when the user says Hello for example.
-- If you dont find the information after 5 rounds, maybe there isnt a info for that, just reply briefly.
-- If you are not able to use tools anymore reply naturally instead of trying to use a tool again.
+    const history: Array<{ role: string; content?: string; tool_calls?: unknown[]; tool_call_id?: string; name?: string }> = [
+      {
+        role: "system",
+        content: `You are Argo, an efficient Discord bot.
 
-# RESPONSE STYLE AND LENGHT
-- Default to short, punchy, and concise replies suitable for a fast-paced Discord chat environment.
-- Only provide long, detailed, or comprehensive explanations if the user explicitly asks for them, or if the complexity of the topic absolutely requires it.
-- Use clean Markdown formatting (bolding, lists, code blocks) to ensure high scannability in chat channels.
+# TOOL USAGE
+- Use tools only when needed.
+- If you already know the answer, do not use tools.
+- If you cannot find information after a few attempts, answer briefly.
 
-# LANGUAGE AND GENDER NEUTRALITY
-- You must use gender-neutral pronouns and inclusive language at all times (e.g., in English use "they/them", in Spanish use neutral formulations or inclusive endings where appropriate).
-- Avoid assuming the gender of any user or third party mentioned in the chat context.
+# STYLE
+- Be concise.
+- Use clean Markdown when useful.
+
+# LANGUAGE
+- Use gender-neutral language.
 
 # EXTRA
-${userSystemPrompt}` },
-      { role: "user", content: prompt }
+${safeText(userSystemPrompt)}`,
+      },
+      { role: "user", content: prompt },
     ];
 
-    const tools = [
+    const tools: ToolDef[] = [
       {
         type: "function",
         function: {
@@ -55,34 +74,41 @@ ${userSystemPrompt}` },
             properties: {
               query: {
                 type: "string",
-                description: "The search query to look up on the web."
-              }
+                description: "The search query to look up on the web.",
+              },
             },
-            required: ["query"]
+            required: ["query"],
           },
-          execute: async (args: { query: string }) => {
+          execute: async (args: ToolArgs) => {
+            const query = String(args.query ?? "").trim();
+            if (!query) return "Search failed: empty query.";
+
             try {
               const response = await fetch("https://api.tavily.com/search", {
                 method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${process.env.TAVILY_TOKEN}` },
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${process.env.TAVILY_TOKEN}`,
+                },
                 body: JSON.stringify({
-                  query: args.query,
+                  query,
                   include_answer: "basic",
-                  max_results: 3
-                })
+                  max_results: 3,
+                }),
               });
-    
+
+              if (!response.ok) {
+                return `Search failed: HTTP ${response.status}`;
+              }
+
               const data = await response.json();
-              
-              return JSON.stringify(data) || "Info not found.";
+              return JSON.stringify(data);
             } catch (error: any) {
-              return `Search failed: ${error.message}`;
+              return `Search failed: ${error?.message ?? "unknown error"}`;
             }
           },
-          formatArgs: (args: { query: string }) => {
-            return args.query;
-          }
-        }
+          formatArgs: (args: ToolArgs) => String(args.query ?? ""),
+        },
       },
       {
         type: "function",
@@ -93,37 +119,37 @@ ${userSystemPrompt}` },
           parameters: {
             type: "object",
             properties: {},
-            required: []
+            required: [],
           },
-          execute: async () => {
-            return (new Date().toLocaleString());
-          },
-          formatArgs: () => {
-            return "";
-          }
-        }
-      }
+          execute: async () => new Date().toLocaleString(),
+          formatArgs: () => "",
+        },
+      },
     ];
 
-    const cleanToolsPayload = tools.map(({ type, function: { name, description, parameters } }) => ({ 
-      type, 
-      function: { name, description, parameters } 
+    const toolMap = new Map(tools.map((t) => [t.function.name, t]));
+
+    const cleanToolsPayload = tools.map(({ type, function: fn }) => ({
+      type,
+      function: {
+        name: fn.name,
+        description: fn.description,
+        parameters: fn.parameters,
+      },
     }));
 
-    try {
-      let runOrchestrator = true;
-      let orchestationLimit = 5;
-      let orchestationCount = 0;
-      let finalContent = "";
-      let toolCalls = [];
-      const model = "openai/gpt-oss-120b";
+    let lastToolIcons: string[] = [];
+    let finalContent = "";
 
-      while (runOrchestrator) {
-        orchestationCount++;
-        
-        await interaction.editReply({ 
-          components: [new TextDisplay({ content: `${getEmoji("settings")} **Fetching** • using ${model}` })], 
-          flags: MessageFlags.IsComponentsV2 
+    try {
+      for (let round = 0; round < maxToolRounds; round++) {
+        await interaction.editReply({
+          components: [
+            new TextDisplay({
+              content: `${getEmoji("settings")} **Fetching** • using ${model}`,
+            }),
+          ],
+          flags: MessageFlags.IsComponentsV2,
         });
 
         const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
@@ -133,61 +159,91 @@ ${userSystemPrompt}` },
             Authorization: `Bearer ${process.env.NVIDIA_TOKEN}`,
           },
           body: JSON.stringify({
-            model,
+            model: model,
             messages: history,
-            tools: orchestationCount > orchestationLimit ? undefined : cleanToolsPayload,
-            tool_choice: orchestationCount > orchestationLimit ? "none" : "auto",
+            tools: cleanToolsPayload,
+            tool_choice: "auto",
             temperature: 0.7,
           }),
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
         const data = await response.json();
-        const message = data.choices[0].message;
-        
-        history.push(message);
+        const message = data?.choices?.[0]?.message;
 
-        if (message.tool_calls?.length > 0) {
-          toolCalls = [...toolCalls, message.tool_calls];
-          for (const toolCall of message.tool_calls) {
-            const targetTool = tools.find(t => t.function.name === toolCall.function.name);
-            if (!targetTool) continue;
+        if (!message) {
+          throw new Error("Empty model response");
+        }
 
-            const parsedArgs = JSON.parse(toolCall.function.arguments);
-            await interaction.editReply({ 
-              components: [new TextDisplay({ content: `${message.reasoning ? "-# " + message.reasoning + "\n" : ""}${getEmoji("oauth2")} Executing...\n    ${getEmoji("text1")} \`${toolCall.function.name}\` **${targetTool.function.formatArgs(parsedArgs)}**` })], 
-              flags: MessageFlags.IsComponentsV2 
+        history.push({
+          role: message.role ?? "assistant",
+          content: message.content ?? "",
+          tool_calls: message.tool_calls,
+        });
+
+        const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+
+        if (toolCalls.length === 0) {
+          finalContent = message.content ?? "";
+          break;
+        }
+
+        lastToolIcons = [];
+
+        const toolResults = await Promise.all(
+          toolCalls.map(async (toolCall: any) => {
+            const toolName = toolCall?.function?.name;
+            const tool = toolName ? toolMap.get(toolName) : undefined;
+            if (!tool) return null;
+
+            const args = parseToolArgs(toolCall?.function?.arguments ?? "");
+            lastToolIcons.push(tool.function.icon);
+
+            await interaction.editReply({
+              components: [
+                new TextDisplay({
+                  content: `${message.reasoning ? `-# ${message.reasoning}\n` : ""}${getEmoji("oauth2")} Executing...\n    ${getEmoji("text1")} \`${tool.function.name}\` **${tool.function.formatArgs(args)}**`,
+                }),
+              ],
+              flags: MessageFlags.IsComponentsV2,
             });
 
-            const result = await targetTool.function.execute(parsedArgs);
+            const result = await tool.function.execute(args);
 
-            history.push({
+            return {
               tool_call_id: toolCall.id,
               role: "tool",
-              name: toolCall.function.name,
-              args: parsedArgs,
+              name: tool.function.name,
               content: result,
-            });
-          }
-        } else {
-          finalContent = message.content;
-          runOrchestrator = false;
+            };
+          })
+        );
+
+        for (const result of toolResults) {
+          if (result) history.push(result);
         }
       }
 
-      await interaction.editReply({ 
+      await interaction.editReply({
         components: [
           new TextDisplay({
-            content: `${finalContent}\n-# **${toolCalls ? toolCalls.map(c => (tools.find(t => t.function.name === c[0].function.name)?.function.icon || getEmoji("wrong"))).join(" ") + " • " : ""}using ${model}**`
-          })
-        ], 
-        flags: MessageFlags.IsComponentsV2
+            content: `${finalContent || "No response."}\n-# **${lastToolIcons.length ? `${lastToolIcons.join(" ")} • ` : ""}using ${model}**`,
+          }),
+        ],
+        flags: MessageFlags.IsComponentsV2,
       });
     } catch (error) {
       console.error(error);
-      await interaction.editReply({ 
-        components: [new TextDisplay({ content: `${getEmoji("wrong")} An error occurred while processing your request.` })], 
-        flags: MessageFlags.IsComponentsV2 
+      await interaction.editReply({
+        components: [
+          new TextDisplay({
+            content: `${getEmoji("wrong")} An error occurred while processing your request.`,
+          }),
+        ],
+        flags: MessageFlags.IsComponentsV2,
       });
     }
   },

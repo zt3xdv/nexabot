@@ -31,3 +31,17 @@ export type RequestOptions<Type extends ResponseType> = {
   timeout?: number;
   headers?: Record<string, string>;
 };
+
+export type ToolArgs = Record<string, unknown>;
+
+export type ToolDef = {
+  type: "function";
+  function: {
+    name: string;
+    icon: string;
+    description: string;
+    parameters: Record<string, unknown>;
+    execute: (args: ToolArgs) => Promise<string>;
+    formatArgs: (args: ToolArgs) => string;
+  };
+};

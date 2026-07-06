@@ -89,3 +89,15 @@ export function makeEphemeral(interaction) {
 export function getCDN(route: string, size: number = 4096, format: string = 'webp', animated: boolean = false): string {
   return `https://cdn.discordapp.com/${route}.${format}?size=${size}&animated=${animated}`;
 }
+
+export function safeText(value: unknown, fallback = ""): string {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+export function parseToolArgs(raw: string): ToolArgs {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
