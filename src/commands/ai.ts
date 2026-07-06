@@ -146,7 +146,7 @@ ${userSystemPrompt}` },
         
         history.push(message);
 
-        if (message.tool_calls?.length > 0 && orchestationLimit >= orchestationCount) {
+        if (message.tool_calls?.length > 0) {
           toolCalls = [...toolCalls, message.tool_calls];
           for (const toolCall of message.tool_calls) {
             const targetTool = tools.find(t => t.function.name === toolCall.function.name);
