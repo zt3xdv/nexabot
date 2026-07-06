@@ -47,6 +47,7 @@ ${userSystemPrompt}` },
         type: "function",
         function: {
           name: "webSearch",
+          icon: getEmoji("search"),
           description: "Search the web for current information, news, or general knowledge.",
           parameters: {
             type: "object",
@@ -86,6 +87,7 @@ ${userSystemPrompt}` },
         type: "function",
         function: {
           name: "date",
+          icon: getEmoji("clock"),
           description: "Get the actual time and date",
           parameters: {
             type: "object",
@@ -168,14 +170,14 @@ ${userSystemPrompt}` },
       }
 
       await interaction.editReply({ 
-        components: [new TextDisplay({ content: `${finalContent}\n-# ${toolCalls.length} tool calls • ${model}` })], 
+        components: [new TextDisplay({ content: `${finalContent}\n${toolCalls ? " • " + toolCalls.map(c => tools.find(t => t.function.name == c.function.name)?.function.icon || getEmoji("wrong").join(" ") + " • ": ""}using ${model}` })], 
         flags: MessageFlags.IsComponentsV2 
       });
 
     } catch (error) {
       console.error(error);
       await interaction.editReply({ 
-        components: [new TextDisplay({ content: `${getEmoji("wrong")} An **error** occurred while processing your request.` })], 
+        components: [new TextDisplay({ content: `${getEmoji("wrong")} An error occurred while processing your request.` })], 
         flags: MessageFlags.IsComponentsV2 
       });
     }
