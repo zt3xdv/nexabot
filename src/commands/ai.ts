@@ -168,13 +168,11 @@ ${userSystemPrompt}` },
           runOrchestrator = false;
         }
       }
-      
-      console.log(toolCalls);
 
       await interaction.editReply({ 
         components: [
           new TextDisplay({
-            content: `${finalContent}\n-# **${toolCalls ? toolCalls.map(c => (tools.find(t => t.function.name === c.function.name)?.function.icon || getEmoji("wrong"))).join(" ") + " • " : ""}using ${model}**`
+            content: `${finalContent}\n-# **${toolCalls ? toolCalls.map(c => (tools.find(t => t.function.name === c[0].function.name)?.function.icon || getEmoji("wrong"))).join(" ") + " • " : ""}using ${model}**`
           })
         ], 
         flags: MessageFlags.IsComponentsV2
