@@ -136,6 +136,7 @@ ${userSystemPrompt}` },
             model,
             messages: history,
             tools: orchestationLimit >= orchestationCount ? undefined : cleanToolsPayload,
+            tool_choice: orchestationLimit >= orchestationCount ? "none" : "auto",
             temperature: 0.7,
           }),
         });
