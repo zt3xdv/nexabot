@@ -135,8 +135,8 @@ ${userSystemPrompt}` },
           body: JSON.stringify({
             model,
             messages: history,
-            tools: orchestationLimit >= orchestationCount ? undefined : cleanToolsPayload,
-            tool_choice: orchestationLimit >= orchestationCount ? "none" : "auto",
+            tools: orchestationCount > orchestationLimit ? undefined : cleanToolsPayload,
+            tool_choice: orchestationCount > orchestationLimit ? "none" : "auto",
             temperature: 0.7,
           }),
         });
