@@ -65,14 +65,14 @@ export default {
         new Container({
           components: [
             new TextDisplay({
-              content: `${getEmoji("dollar")} ${FormatCurrency(amount, from)} **${from.toUpperCase()}** -> ${FormatCurrency(res.rate * amount, to)} **${to.toUpperCase()}**`
+              content: `${getEmoji("dollar")} ${formatCurrency(amount, from)} **${from.toUpperCase()}** -> ${formatCurrency(res.rate * amount, to)} **${to.toUpperCase()}**`
             }),
             new Separator({
               spacing: SeparatorSpacingSize.Large,
               divider: true,
             }),
             new TextDisplay({
-              content: `-# **Exchange rate:** 1 **${from.toUpperCase()}** -> ${FormatCurrency(res.rate, to)} **${to.toUpperCase()}**`
+              content: `-# **Exchange rate:** 1 **${from.toUpperCase()}** -> ${formatCurrency(res.rate, to)} **${to.toUpperCase()}**`
             })
           ] 
         })], 
